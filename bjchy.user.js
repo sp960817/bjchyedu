@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         视频完成按钮（仅视频页面）
 // @namespace    http://tampermonkey.net/
-// @version      0.3
+// @version      0.4
 // @description  仅在视频页面显示一个“完成观看”按钮，支持两个域名，密码只验证一次
 // @author       siiloo
 // @match        http://58.132.9.45/*
@@ -101,7 +101,7 @@
                 if (resourceInfoId && totalLength !== null) {
                     const lookTimes = calculateLookTimes(totalLength);
                     sendRequest(lookTimes);
-            //      alert('已发送完成观看请求！');
+//                  alert('已发送完成观看请求！');
                 } else {
                     alert('未获取到参数，请确保视频已加载！');
                 }
