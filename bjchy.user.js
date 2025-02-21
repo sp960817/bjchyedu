@@ -101,7 +101,7 @@
                 if (resourceInfoId && totalLength !== null) {
                     const lookTimes = calculateLookTimes(totalLength);
                     sendRequest(lookTimes);
-                    alert('已发送完成观看请求！');
+            //      alert('已发送完成观看请求！');
                 } else {
                     alert('未获取到参数，请确保视频已加载！');
                 }
