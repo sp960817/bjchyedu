@@ -49,7 +49,7 @@
         }
         .complete-btn {
             position: fixed;
-            bottom: 20px;
+            bottom: 40px;
             right: 20px;
             padding: 10px 20px;
             background: #2196F3;
