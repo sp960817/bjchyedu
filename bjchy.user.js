@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         视频完成按钮（仅视频页面）优化版
 // @namespace    http://tampermonkey.net/
-// @version      0.5
+// @version      0.6
 // @description  安全增强版，优化按钮样式和交互，增加超时验证
 // @author       siiloo
 // @match        http://58.132.9.45/*
@@ -23,6 +23,8 @@
     // 初始化全局变量
     let resourceInfoId = null;
     let totalLength = null;
+    let userId = null;
+    let courseInfoId =null;
 
     // 样式模板
     GM_addStyle(`
@@ -130,17 +132,19 @@
 
     // 请求拦截器
     function interceptRequests() {
-        const origOpen = XMLHttpRequest.prototype.open;
-        XMLHttpRequest.prototype.open = function(method, url) {
-            if (url.includes('selectStuResourceInfo.action')) {
-                const params = new URLSearchParams(url.split('?')[1]);
-                resourceInfoId = params.get('resourceInfoId');
-                totalLength = Number(params.get('totalLength'));
-                console.debug('成功捕获参数:', {resourceInfoId, totalLength});
-            }
-            origOpen.apply(this, arguments);
-        };
-    }
+    const origOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url) {
+        if (url.includes('selectStuResourceInfo.action')) {
+            const params = new URLSearchParams(url.split('?')[1]);
+            resourceInfoId = params.get('resourceInfoId');
+            totalLength = Number(params.get('totalLength')); // 可选，保留作为备用
+            userId = params.get('userId'); // 捕获 userId
+            courseInfoId = params.get('courseInfoId'); // 捕获 courseInfoId
+            console.debug('成功捕获参数:', {resourceInfoId, totalLength, userId, courseInfoId});
+        }
+        origOpen.apply(this, arguments);
+    };
+}
 
     // 视频元素检测（带超时）
     function waitForVideo(timeout = 15000) {
@@ -213,30 +217,29 @@
     }
 
     // 提交请求
-    function submitRequest(lookTimes) {
-        return new Promise((resolve, reject) => {
-            const host = window.location.host;
-            const baseURL = host.includes('58.132.9.45')
-                ? 'http://58.132.9.45/BKPT/stuResourceInfo.action'
-                : 'http://yxw.bjchyedu.cn/BKPT/stuResourceInfo.action';
+   function submitRequest(lookTimes) {
+    return new Promise((resolve, reject) => {
+        const host = window.location.host;
+        const baseURL = host.includes('58.132.9.45')
+            ? 'http://58.132.9.45/BKPT/stuResourceInfo.action'
+            : 'http://yxw.bjchyedu.cn/BKPT/stuResourceInfo.action';
 
-            const params = new URLSearchParams({
-                lookTimes,
-                totalLength,
-                resourceInfoId,
-                userId: '5000167466',
-                roleInfoId: '7',
-                courseInfoId: '5000027326'
-            });
-
-            const xhr = new XMLHttpRequest();
-            xhr.open('GET', `${baseURL}?${params}`);
-            xhr.onload = () => (xhr.status === 200) ? resolve() : reject(new Error('请求失败'));
-            xhr.onerror = () => reject(new Error('网络错误'));
-            xhr.send();
+        const params = new URLSearchParams({
+            lookTimes,
+            totalLength,
+            resourceInfoId,
+            userId: userId || '5000167466', // 使用捕获的值，失败则回退
+            roleInfoId: '7',
+            courseInfoId: courseInfoId || '5000027326' // 使用捕获的值，失败则回退
         });
-    }
 
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', `${baseURL}?${params}`);
+        xhr.onload = () => (xhr.status === 200) ? resolve() : reject(new Error('请求失败'));
+        xhr.onerror = () => reject(new Error('网络错误'));
+        xhr.send();
+    });
+}
     // 可视化提示
     function showToast(message, type = 'info') {
         const toast = document.createElement('div');
