@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         视频完成按钮（仅视频页面）优化版
 // @namespace    http://tampermonkey.net/
-// @version      0.6
+// @version      0.7
 // @description  安全增强版，优化按钮样式和交互，增加超时验证
 // @author       siiloo
 // @match        http://58.132.9.45/*
