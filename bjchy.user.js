@@ -1,143 +1,266 @@
 // ==UserScript==
-// @name         视频完成按钮（仅视频页面）
+// @name         视频完成按钮（仅视频页面）优化版
 // @namespace    http://tampermonkey.net/
-// @version      0.4
-// @description  仅在视频页面显示一个“完成观看”按钮，支持两个域名，密码只验证一次
+// @version      0.5
+// @description  安全增强版，优化按钮样式和交互，增加超时验证
 // @author       siiloo
 // @match        http://58.132.9.45/*
 // @match        http://yxw.bjchyedu.cn/*
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        GM_addStyle
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    // 定义全局变量存储动态参数
+    // 配置参数
+    const CONFIG = {
+        CORRECT_PASSWORD: 'xiaojilingqiu',   // 加密密码
+        VERIFY_TIMEOUT: 72 * 3600 * 1000 // 24小时验证有效期
+    };
+
+    // 初始化全局变量
     let resourceInfoId = null;
     let totalLength = null;
-    const correctPassword = '小机灵球'; // 设置密码
 
-    // 使用 Greasemonkey 的 GM_getValue 和 GM_setValue 来跨域名存储验证状态
-    const isVerified = GM_getValue('scriptVerified', false);
-
-    // 密码验证函数，只在整个会话中验证一次
-    function verifyPassword() {
-        if (isVerified) {
-            initializeScript();
-            return;
+    // 样式模板
+    GM_addStyle(`
+        .custom-overlay {
+            background: rgba(0,0,0,0.5);
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 9999;
         }
+        .password-dialog {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .complete-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            z-index: 1000;
+            transition: all 0.3s;
+        }
+        .complete-btn:disabled {
+            background: #9E9E9E;
+            cursor: not-allowed;
+        }
+    `);
 
-        const password = prompt('请输入密码以启用脚本：');
-        if (password === correctPassword) {
-            GM_setValue('scriptVerified', true); // 存储验证状态
-            alert('验证成功！');
-            initializeScript();
+    // 验证系统
+    function checkAuth() {
+        const lastVerify = GM_getValue('lastVerify', 0);
+        const isVerified = GM_getValue('isVerified', false);
+
+        if (isVerified && (Date.now() - lastVerify < CONFIG.VERIFY_TIMEOUT)) {
+            return true;
+        }
+        GM_setValue('isVerified', false);
+        return false;
+    }
+
+    // 密码输入对话框
+    function showAuthDialog() {
+        const overlay = document.createElement('div');
+        overlay.className = 'custom-overlay';
+
+        const dialog = document.createElement('div');
+        dialog.className = 'password-dialog';
+
+        const input = document.createElement('input');
+        input.type = 'password';
+        input.placeholder = '请输入访问密码';
+        input.style.margin = '10px 0';
+        input.style.padding = '8px';
+
+        const btn = document.createElement('button');
+        btn.textContent = '确认';
+        btn.onclick = () => handleAuth(input.value, overlay);
+        btn.style.padding = '8px 16px';
+
+        dialog.append(input, btn);
+        overlay.append(dialog);
+        document.body.append(overlay);
+        input.focus();
+    }
+
+    // 处理验证逻辑
+    function handleAuth(input, overlay) {
+        if (input === CONFIG.CORRECT_PASSWORD) {
+            GM_setValue('isVerified', true);
+            GM_setValue('lastVerify', Date.now());
+            overlay.remove();
+            initializeCore();
         } else {
-            alert('密码错误，脚本将不会运行！');
+            alert('密码错误，功能将不会启用');
+            overlay.remove();
         }
     }
 
-    // 初始化脚本的主要逻辑
-    function initializeScript() {
-        // 重写XMLHttpRequest的open方法，拦截网络请求
-        (function() {
-            const originalOpen = XMLHttpRequest.prototype.open;
-            XMLHttpRequest.prototype.open = function(method, url) {
-                if (method === 'GET' && url.includes('selectStuResourceInfo.action')) {
-                    const params = new URLSearchParams(url.split('?')[1]);
-                    resourceInfoId = params.get('resourceInfoId');
-                    totalLength = parseFloat(params.get('totalLength'));
-                    console.log('捕获到的参数:', 'resourceInfoId=', resourceInfoId, 'totalLength=', totalLength);
-                }
-                originalOpen.apply(this, arguments);
-            };
-        })();
+    // 核心功能初始化
+    function initializeCore() {
+        // 拦截网络请求
+        interceptRequests();
 
-        // 等待视频元素加载并添加按钮
-        function waitForVideo() {
-            const video = document.querySelector('video');
-            if (video) {
-                addButton(video);
-            } else {
-                // 如果页面还没有视频元素，监听DOM变化
-                const observer = new MutationObserver(function(mutations) {
-                    const video = document.querySelector('video');
-                    if (video) {
-                        addButton(video);
-                        observer.disconnect(); // 停止观察
-                    }
-                });
-                observer.observe(document.body, { childList: true, subtree: true });
+        // 智能等待视频加载
+        waitForVideo().then(video => {
+            injectControlButton(video);
+        }).catch(err => {
+            console.error('视频加载超时:', err);
+        });
+    }
+
+    // 请求拦截器
+    function interceptRequests() {
+        const origOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url) {
+            if (url.includes('selectStuResourceInfo.action')) {
+                const params = new URLSearchParams(url.split('?')[1]);
+                resourceInfoId = params.get('resourceInfoId');
+                totalLength = Number(params.get('totalLength'));
+                console.debug('成功捕获参数:', {resourceInfoId, totalLength});
             }
-        }
+            origOpen.apply(this, arguments);
+        };
+    }
 
-        // 添加单个按钮到视频播放器附近
-        function addButton(video) {
-            // 检查是否已添加按钮，避免重复
-            if (video.parentElement.querySelector('.complete-button')) return;
+    // 视频元素检测（带超时）
+    function waitForVideo(timeout = 15000) {
+        return new Promise((resolve, reject) => {
+            const video = document.querySelector('video');
+            if (video) return resolve(video);
 
-            // 创建按钮
-            const completeButton = document.createElement('button');
-            completeButton.textContent = '完成观看';
-            completeButton.className = 'complete-button';
-            completeButton.style.position = 'absolute';
-            completeButton.style.top = '10px';
-            completeButton.style.right = '10px';
-            completeButton.style.zIndex = '1000';
-            completeButton.style.padding = '5px 10px';
-            completeButton.style.backgroundColor = '#4CAF50';
-            completeButton.style.color = 'white';
-            completeButton.style.border = 'none';
-            completeButton.style.borderRadius = '3px';
-            completeButton.style.cursor = 'pointer';
-
-            // 将按钮添加到视频元素的父元素
-            video.parentElement.style.position = 'relative';
-            video.parentElement.appendChild(completeButton);
-
-            // 按钮点击事件
-            completeButton.addEventListener('click', function() {
-                if (resourceInfoId && totalLength !== null) {
-                    const lookTimes = calculateLookTimes(totalLength);
-                    sendRequest(lookTimes);
-//                  alert('已发送完成观看请求！');
-                } else {
-                    alert('未获取到参数，请确保视频已加载！');
+            const observer = new MutationObserver(mutations => {
+                const target = document.querySelector('video');
+                if (target) {
+                    observer.disconnect();
+                    resolve(target);
                 }
             });
-        }
 
-        // 计算lookTimes
-        function calculateLookTimes(totalLength) {
-            let lookTimes = totalLength - 12; // 假设完成观看为视频总时长减去12秒
-            return Math.max(lookTimes.toFixed(2), 0);
-        }
+            observer.observe(document, {
+                childList: true,
+                subtree: true
+            });
 
-        // 发送请求，动态选择域名
-        function sendRequest(lookTimes) {
-            const xhr = new XMLHttpRequest();
-            const currentHost = window.location.hostname;
-            let baseUrl;
-            if (currentHost === '58.132.9.45') {
-                baseUrl = 'http://58.132.9.45/BKPT/stuResourceInfo.action';
-            } else if (currentHost === 'yxw.bjchyedu.cn') {
-                baseUrl = 'http://yxw.bjchyedu.cn/BKPT/stuResourceInfo.action';
-            } else {
-                alert('未知的域名，无法发送请求！');
-                return;
-            }
-
-            const url = `${baseUrl}?lookTimes=${lookTimes}&totalLength=${totalLength}&resourceInfoId=${resourceInfoId}&userId=5000167466&roleInfoId=7&courseInfoId=5000027326`;
-            xhr.open('GET', url, true);
-            xhr.send();
-            console.log('发送请求:', url);
-        }
-
-        // 启动脚本
-        waitForVideo();
+            // 设置超时保险
+            setTimeout(() => {
+                observer.disconnect();
+                reject(new Error('视频加载超时'));
+            }, timeout);
+        });
     }
 
-    // 启动密码验证
-    verifyPassword();
+    // 注入控制按钮
+    function injectControlButton(video) {
+        if (document.querySelector('.complete-btn')) return;
+
+        const btn = document.createElement('button');
+        btn.className = 'complete-btn';
+        btn.textContent = '⏩ 一键完成';
+
+        // 按钮交互逻辑
+        btn.onclick = async () => {
+            try {
+                btn.disabled = true;
+                btn.textContent = '处理中...';
+
+                if (!validateParams()) {
+                    throw new Error('关键参数未就绪，请刷新页面重试');
+                }
+
+                const lookTimes = calculateLookTimes();
+                await submitRequest(lookTimes);
+                showToast('✅ 已完成观看！', 'success');
+            } catch (err) {
+                showToast(`❌ 错误: ${err.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '⏩ 一键完成';
+            }
+        };
+
+        document.body.append(btn);
+    }
+
+    // 参数验证
+    function validateParams() {
+        return resourceInfoId && totalLength >= 0;
+    }
+
+    // 计算观看时长
+    function calculateLookTimes() {
+        const calculated = totalLength - 12;
+        return Math.max(calculated, 0).toFixed(2);
+    }
+
+    // 提交请求
+    function submitRequest(lookTimes) {
+        return new Promise((resolve, reject) => {
+            const host = window.location.host;
+            const baseURL = host.includes('58.132.9.45')
+                ? 'http://58.132.9.45/BKPT/stuResourceInfo.action'
+                : 'http://yxw.bjchyedu.cn/BKPT/stuResourceInfo.action';
+
+            const params = new URLSearchParams({
+                lookTimes,
+                totalLength,
+                resourceInfoId,
+                userId: '5000167466',
+                roleInfoId: '7',
+                courseInfoId: '5000027326'
+            });
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', `${baseURL}?${params}`);
+            xhr.onload = () => (xhr.status === 200) ? resolve() : reject(new Error('请求失败'));
+            xhr.onerror = () => reject(new Error('网络错误'));
+            xhr.send();
+        });
+    }
+
+    // 可视化提示
+    function showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.textContent = message;
+        toast.style = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 24px;
+            background: ${type === 'error' ? '#ff4444' : '#00C851'};
+            color: white;
+            border-radius: 4px;
+            animation: slideIn 0.3s;
+            z-index: 9999;
+        `;
+
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
+
+    // 启动入口
+    if (checkAuth()) {
+        initializeCore();
+    } else {
+        showAuthDialog();
+    }
 })();
