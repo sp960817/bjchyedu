@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         朝阳教师学习平台视频进度欺骗器
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  强制标记视频为已完成状态
 // @author       siiloo
 // @match        http://58.132.9.45/*
@@ -97,6 +97,15 @@
                 overrideTimeParams();
                 bypassVerification();
                 forceComplete();
+
+                // 自动播放视频并在0.5秒后暂停
+                video.play().then(() => {
+                    setTimeout(() => {
+                        video.pause();
+                    }, 1000); // 暂停延迟0.5秒
+                }).catch(err => {
+                    console.log('播放失败:', err);
+                });
 
                 // 持续监控（应对SPA）
                 setInterval(() => {
