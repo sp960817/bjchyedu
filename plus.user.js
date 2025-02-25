@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         朝阳教师学习平台视频进度欺骗器
 // @namespace    http://tampermonkey.net/
-// @version      1.3
-// @description  强制标记视频为已完成状态
+// @version      1.5
+// @description  强制标记视频为已完成状态（新增密码验证）
 // @author       siiloo
 // @match        http://58.132.9.45/*
 // @match        http://yxw.bjchyedu.cn/*
@@ -12,6 +12,22 @@
 (function() {
     'use strict';
 
+    // 检查是否已验证过（使用 localStorage 存储验证状态）
+    const isVerified = localStorage.getItem('scriptVerified') === 'true';
+    const correctPassword = 'xiaojilingqiu';
+
+    // 如果未验证，显示密码输入框
+    if (!isVerified) {
+        const userInput = prompt('请输入密码以使用脚本：', '');
+        if (userInput !== correctPassword) {
+            alert('密码错误，脚本将不会运行！');
+            return; // 退出脚本
+        } else {
+            localStorage.setItem('scriptVerified', 'true');
+            alert('密码正确，脚本已激活！');
+        }
+    }
+
     // 劫持原始时间参数
     let hijacked = false;
 
@@ -19,34 +35,29 @@
         const myVid = document.getElementById('player');
         if (!myVid) return;
 
-        // 覆盖关键时间检测函数
         myVid.seekable.end = function() {
-            return [999999]; // 设置超大可播放时长
+            return [999999];
         };
 
-        // 劫持当前播放时间
         Object.defineProperty(myVid, 'currentTime', {
-            get: function() { return 999999; }, // 始终返回极大值
-            set: function() {} // 禁用时间设置
+            get: function() { return 999999; },
+            set: function() {}
         });
 
-        // 劫持mytime计数器
         const _interval = window.myInterval;
         window.myInterval = function() {
-            window.mytime = 999999; // 强制设置计时器
+            window.mytime = 999999;
             _interval && _interval();
         };
 
         hijacked = true;
     };
 
-    // 绕过问题验证
     const bypassVerification = () => {
         $.blockUI = function() { console.log('BlockUI prevented'); };
         window.reload_code = function() {};
     };
 
-    // 强制提交完成请求
     const forceComplete = () => {
         const fakeParams = {
             resourceInfoId: resourceInfoId2,
@@ -61,7 +72,6 @@
         });
     };
 
-    // 创建并添加按钮
     const createButton = () => {
         const video = document.getElementById('player');
         if (!video) return;
@@ -83,7 +93,6 @@
             font-size: 14px;
         `;
 
-        // 鼠标悬停效果
         button.onmouseover = () => {
             button.style.background = '#ff6666';
         };
@@ -91,23 +100,23 @@
             button.style.background = '#ff4444';
         };
 
-        // 点击事件
         button.onclick = () => {
             if (!hijacked) {
                 overrideTimeParams();
                 bypassVerification();
                 forceComplete();
 
-                // 自动播放视频并在0.5秒后暂停
-                video.play().then(() => {
-                    setTimeout(() => {
-                        video.pause();
-                    }, 1000); // 暂停延迟0.5秒
-                }).catch(err => {
-                    console.log('播放失败:', err);
-                });
+                // 延迟1秒后播放视频并在0.5秒后暂停
+                setTimeout(() => {
+                    video.play().then(() => {
+                        setTimeout(() => {
+                            video.pause();
+                        }, 500); // 暂停延迟0.5秒
+                    }).catch(err => {
+                        console.log('播放失败:', err);
+                    });
+                }, 1000); // 初始延迟1秒
 
-                // 持续监控（应对SPA）
                 setInterval(() => {
                     overrideTimeParams();
                     forceComplete();
@@ -119,14 +128,11 @@
             }
         };
 
-        // 将按钮添加到视频的父元素
         video.parentElement.style.position = 'relative';
         video.parentElement.appendChild(button);
     };
 
-    // 初始化函数
     const init = () => {
-        // 检查视频元素是否加载完成
         const checkVideo = setInterval(() => {
             if (document.getElementById('player')) {
                 clearInterval(checkVideo);
@@ -135,6 +141,5 @@
         }, 500);
     };
 
-    // 页面加载完成后启动
     window.addEventListener('load', init);
 })();
