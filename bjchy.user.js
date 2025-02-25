@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         视频完成按钮（仅视频页面）优化版
 // @namespace    http://tampermonkey.net/
-// @version      0.8
-// @description  安全增强版，优化按钮样式和交互，增加超时验证，并屏蔽错误页面
+// @version      1.0
+// @description  修改为一键触发指定事件请求，动态替换参数
 // @author       siiloo
 // @match        http://58.132.9.45/*
 // @match        http://yxw.bjchyedu.cn/*
@@ -17,13 +17,14 @@
     // 配置参数
     const CONFIG = {
         CORRECT_PASSWORD: 'xiaojilingqiu',   // 加密密码
-        VERIFY_TIMEOUT: 72 * 3600 * 1000,    // 24小时验证有效期
+        VERIFY_TIMEOUT: 72 * 3600 * 1000,    // 72小时验证有效期
         ERROR_PAGE_URL: 'http://58.132.9.45/BKPT/jsp/common/error.jsp' // 要屏蔽的错误页面
     };
 
     // 初始化全局变量
     let resourceInfoId = null;
-    let totalLength = null;
+    let userId = null;
+    let courseInfoId = null;
 
     // 样式模板
     GM_addStyle(`
@@ -127,8 +128,9 @@
             if (url.includes('selectStuResourceInfo.action')) {
                 const params = new URLSearchParams(url.split('?')[1]);
                 resourceInfoId = params.get('resourceInfoId');
-                totalLength = Number(params.get('totalLength'));
-                console.debug('成功捕获参数:', { resourceInfoId, totalLength});
+//                userId = params.get('userId') ;
+//                courseInfoId = params.get('courseInfoId') ;
+                console.debug('成功捕获参数:', { resourceInfoId });
             }
             origOpen.apply(this, arguments);
         };
@@ -148,7 +150,6 @@
 
     // 拦截页面导航
     function interceptNavigation() {
-        // 拦截 <a> 标签点击
         document.addEventListener('click', function(event) {
             if (event.target.tagName === 'A' && event.target.href === CONFIG.ERROR_PAGE_URL) {
                 event.preventDefault();
@@ -156,7 +157,6 @@
             }
         });
 
-        // 拦截页面 URL 变化
         let oldHref = document.location.href;
         const observer = new MutationObserver(() => {
             if (oldHref !== document.location.href) {
@@ -172,12 +172,10 @@
 
     // 核心功能初始化
     function initializeCore() {
-        // 拦截所有请求和导航
         interceptXHR();
         interceptFetch();
         interceptNavigation();
 
-        // 智能等待视频加载
         waitForVideo().then(video => {
             injectControlButton(video);
         }).catch(err => {
@@ -222,12 +220,11 @@
                 btn.textContent = '处理中...';
 
                 if (!validateParams()) {
-                    throw new Error('关键参数未就绪，请刷新页面重试');
+                    throw new Error('关键参数未就绪，请播放一下视频');
                 }
 
-                const lookTimes = calculateLookTimes();
-                await submitRequest(lookTimes);
-                showToast('✅ 已完成观看！', 'success');
+                await triggerEvent();
+                showToast('✅ 已完成！', 'success');
             } catch (err) {
                 showToast(`❌ 错误: ${err.message}`, 'error');
             } finally {
@@ -241,32 +238,28 @@
 
     // 参数验证
     function validateParams() {
-        return resourceInfoId && totalLength >= 0;
+        return resourceInfoId ;
     }
 
-    // 计算观看时长
-    function calculateLookTimes() {
-        const calculated = totalLength - 12;
-        return Math.max(calculated, 0).toFixed(2);
-    }
-
-    // 提交请求
-    function submitRequest(lookTimes) {
+    // 触发事件请求
+    function triggerEvent() {
         return new Promise((resolve, reject) => {
-            const host = window.location.host;
-            const baseURL = host.includes('58.132.9.45')
-                ? 'http://58.132.9.45/BKPT/stuResourceInfo.action'
-                : 'http://yxw.bjchyedu.cn/BKPT/stuResourceInfo.action';
-
+            const baseURL = 'http://58.132.9.45/BKPT/checkLookResource.action';
             const params = new URLSearchParams({
-                lookTimes,
-                totalLength,
-                resourceInfoId
+                resourceInfoId: resourceInfoId,
+                wanChengType: '1'
             });
 
             const xhr = new XMLHttpRequest();
             xhr.open('GET', `${baseURL}?${params}`);
-            xhr.onload = () => (xhr.status === 200) ? resolve() : reject(new Error('请求失败'));
+            xhr.onload = () => {
+                if (xhr.status === 200) {
+                    console.log('事件触发成功:', xhr.responseText);
+                    resolve();
+                } else {
+                    reject(new Error(`请求失败，状态码: ${xhr.status}`));
+                }
+            };
             xhr.onerror = () => reject(new Error('网络错误'));
             xhr.send();
         });
