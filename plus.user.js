@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         朝阳教师学习平台视频进度欺骗器
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @description  强制标记视频为已完成状态
 // @author       siiloo
 // @match        http://58.132.9.45/*
@@ -17,7 +17,7 @@
 
     const overrideTimeParams = () => {
         const myVid = document.getElementById('player');
-        if(!myVid) return;
+        if (!myVid) return;
 
         // 覆盖关键时间检测函数
         myVid.seekable.end = function() {
@@ -61,56 +61,71 @@
         });
     };
 
-    // 显示浮动提示
-    const showNotification = () => {
+    // 创建并添加按钮
+    const createButton = () => {
         const video = document.getElementById('player');
         if (!video) return;
 
-        // 创建提示元素
-        const notification = document.createElement('div');
-        notification.textContent = '脚本加载成功，请开始然后暂停一次视频';
-        notification.style.cssText = `
+        const button = document.createElement('button');
+        button.textContent = '标记完成';
+        button.style.cssText = `
             position: absolute;
             top: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.8);
+            left: 10px;
+            background: #ff4444;
             color: white;
-            padding: 10px 20px;
+            border: none;
+            padding: 8px 16px;
             border-radius: 5px;
+            cursor: pointer;
             z-index: 9999;
             font-family: Arial, sans-serif;
-            font-size: 16px;
+            font-size: 14px;
         `;
 
-        // 将提示添加到视频的父元素
+        // 鼠标悬停效果
+        button.onmouseover = () => {
+            button.style.background = '#ff6666';
+        };
+        button.onmouseout = () => {
+            button.style.background = '#ff4444';
+        };
+
+        // 点击事件
+        button.onclick = () => {
+            if (!hijacked) {
+                overrideTimeParams();
+                bypassVerification();
+                forceComplete();
+
+                // 持续监控（应对SPA）
+                setInterval(() => {
+                    overrideTimeParams();
+                    forceComplete();
+                }, 5000);
+
+                button.textContent = '已标记';
+                button.style.background = '#44ff44';
+                button.disabled = true;
+            }
+        };
+
+        // 将按钮添加到视频的父元素
         video.parentElement.style.position = 'relative';
-        video.parentElement.appendChild(notification);
-
-        // 3秒后自动移除
-        setTimeout(() => {
-            notification.remove();
-        }, 3000);
+        video.parentElement.appendChild(button);
     };
 
-    // 执行主逻辑
-    const main = () => {
-        if(hijacked) return;
-
-        overrideTimeParams();
-        bypassVerification();
-        forceComplete();
-
-        // 持续监控（应对SPA）
-        setInterval(() => {
-            overrideTimeParams();
-            forceComplete();
-        }, 5000);
-
-        // 显示提示
-        showNotification();
+    // 初始化函数
+    const init = () => {
+        // 检查视频元素是否加载完成
+        const checkVideo = setInterval(() => {
+            if (document.getElementById('player')) {
+                clearInterval(checkVideo);
+                createButton();
+            }
+        }, 500);
     };
 
-    // 延迟启动以适应页面加载
-    setTimeout(main, 3000);
+    // 页面加载完成后启动
+    window.addEventListener('load', init);
 })();
