@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         视频进度欺骗器
 // @namespace    http://tampermonkey.net/
-// @version      0.1
+// @version      1.0
 // @description  强制标记视频为已完成状态
 // @author       siiloo
 // @match        http://58.132.9.45/*
@@ -61,6 +61,38 @@
         });
     };
 
+    // 显示浮动提示
+    const showNotification = () => {
+        const video = document.getElementById('player');
+        if (!video) return;
+
+        // 创建提示元素
+        const notification = document.createElement('div');
+        notification.textContent = '脚本加载成功';
+        notification.style.cssText = `
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            z-index: 9999;
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+        `;
+
+        // 将提示添加到视频的父元素
+        video.parentElement.style.position = 'relative';
+        video.parentElement.appendChild(notification);
+
+        // 3秒后自动移除
+        setTimeout(() => {
+            notification.remove();
+        }, 3000);
+    };
+
     // 执行主逻辑
     const main = () => {
         if(hijacked) return;
@@ -74,6 +106,9 @@
             overrideTimeParams();
             forceComplete();
         }, 5000);
+
+        // 显示提示
+        showNotification();
     };
 
     // 延迟启动以适应页面加载
