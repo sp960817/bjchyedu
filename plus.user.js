@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         朝阳教师学习平台视频进度欺骗器
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  强制标记视频为已完成状态
 // @author       siiloo
 // @match        http://58.132.9.45/*
