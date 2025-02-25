@@ -68,7 +68,7 @@
 
         // 创建提示元素
         const notification = document.createElement('div');
-        notification.textContent = '脚本加载成功';
+        notification.textContent = '脚本加载成功，请开始然后暂停一次视频';
         notification.style.cssText = `
             position: absolute;
             top: 10px;
