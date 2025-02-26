@@ -1,15 +1,19 @@
 // ==UserScript==
 // @name         一键结业
 // @namespace    http://tampermonkey.net/
-// @version      0.1
+// @version      0.2
 // @description  一键完成调查问卷
-// @author       Grok
+// @author       siiloo
 // @match        http://58.132.9.45/survey/actor/*
+// @match        http://yxw.bjchyedu.cn/survey/actor/*
 // @grant        none
 // ==/UserScript==
 
 (function() {
     'use strict';
+
+    // 获取当前域名
+    const currentHost = window.location.hostname;
 
     // 创建一键完成按钮
     const completeButton = document.createElement('button');
@@ -67,8 +71,13 @@
             shuru: encodeURIComponent('无其他建议\r\n')
         });
 
+        // 根据当前域名设置目标URL
+        const baseUrl = currentHost === '58.132.9.45' 
+            ? 'http://58.132.9.45' 
+            : 'http://yxw.bjchyedu.cn';
+
         // 发送请求
-        fetch(`http://58.132.9.45/survey/actor/NewSaveAnswerAction.a?${finalParams.toString()}`, {
+        fetch(`${baseUrl}/survey/actor/NewSaveAnswerAction.a?${finalParams.toString()}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded'
