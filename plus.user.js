@@ -1,145 +1,201 @@
 // ==UserScript==
-// @name         朝阳教师学习平台视频进度欺骗器
-// @namespace    http://tampermonkey.net/
-// @version      1.5
-// @description  强制标记视频为已完成状态（新增密码验证）
+// @name         朝阳教师学习网脚本
+// @namespace    http://your-namespace.com
+// @version      3.2
+// @description  跨框架提取资源ID并自动标记完成（单次密码验证）
 // @author       siiloo
-// @match        http://58.132.9.45/*
-// @match        http://yxw.bjchyedu.cn/*
-// @grant        none
+// @match        http://58.132.9.45/BKPT/unitCenter.action*
+// @match        http://yxw.bjchyedu.cn/BKPT/unitCenter.action*
+// @grant        GM_xmlhttpRequest
+// @grant        GM_notification
+// @grant        GM_addStyle
+// @grant        GM_setValue
+// @grant        GM_getValue
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    // 检查是否已验证过（使用 localStorage 存储验证状态）
-    const isVerified = localStorage.getItem('scriptVerified') === 'true';
+    // 密码验证相关
     const correctPassword = 'xiaojilingqiu';
+    const VERIFIED_KEY = 'script_verified';
 
-    // 如果未验证，显示密码输入框
+    // 检查是否已验证
+    const isVerified = GM_getValue(VERIFIED_KEY, false);
+
     if (!isVerified) {
-        const userInput = prompt('请输入密码以使用脚本：', '');
+        const userInput = prompt('请输入密码：', '');
         if (userInput !== correctPassword) {
-            alert('密码错误，脚本将不会运行！');
-            return; // 退出脚本
-        } else {
-            localStorage.setItem('scriptVerified', 'true');
-            alert('密码正确，脚本已激活！');
+            alert('密码错误，脚本未加载！');
+            return;
+        }
+        GM_setValue(VERIFIED_KEY, true);
+        alert('密码正确，脚本加载成功！验证状态已保存');
+    }
+
+    // 获取当前域名
+    const currentDomain = window.location.hostname;
+    const baseUrl = `http://${currentDomain}/BKPT/`;
+
+    // 界面样式
+    GM_addStyle(`
+        .extract-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 24px;
+            background: linear-gradient(145deg, #2196F3, #1976D2);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(33,150,243,0.3);
+            font-size: 16px;
+            transition: transform 0.2s;
+            z-index: 2147483647;
+        }
+
+        .status-panel {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: rgba(255,255,255,0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            width: 300px;
+            font-family: Arial, sans-serif;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #4CAF50;
+            transition: width 0.3s ease;
+        }
+    `);
+
+    // 创建界面元素
+    const btn = document.createElement('button');
+    btn.className = 'extract-btn';
+    btn.textContent = '🏁 开始标记';
+    document.body.appendChild(btn);
+
+    const panel = document.createElement('div');
+    panel.className = 'status-panel';
+    panel.innerHTML = `
+        <h3 style="margin:0 0 10px">执行进度</h3>
+        <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+        <div>已完成: <span class="completed">0</span>/<span class="total">0</span></div>
+        <div>当前ID: <span class="current-id">-</span></div>
+        <div>状态: <span class="status">等待开始</span></div>
+    `;
+    document.body.appendChild(panel);
+
+    // 核心功能
+    async function processResources() {
+        const iframe = document.getElementById('unitIframe');
+        const ids = await extractResourceIds(iframe);
+
+        if (ids.length === 0) {
+            updateStatus('未找到资源ID', 'error');
+            return;
+        }
+
+        btn.disabled = true;
+        updateStatus(`开始处理 ${ids.length} 个资源`, 'processing');
+        updateProgress(0, ids.length);
+
+        for (let i = 0; i < ids.length; i++) {
+            const id = ids[i];
+            updateStatus(`正在处理 ID: ${id}`, 'processing');
+            updateCurrentId(id);
+
+            try {
+                await sendRequest(id);
+                updateProgress(i + 1, ids.length);
+                await randomDelay(1000, 1500);
+            } catch (error) {
+                console.error(`资源 ${id} 处理失败:`, error);
+                updateStatus(`处理失败: ${id}`, 'error');
+            }
+        }
+
+        updateStatus('全部处理完成', 'success');
+        btn.disabled = false;
+        GM_notification({
+            title: '处理完成',
+            text: `成功处理 ${ids.length} 个资源`,
+            timeout: 5000
+        });
+    }
+
+    // 跨框架提取ID
+    async function extractResourceIds(iframe) {
+        try {
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+            return Array.from(iframeDoc.querySelectorAll('a[href^="javascript:selectResource"]'))
+                .map(a => a.href.match(/selectResource\('(\d+)'/)?.[1])
+                .filter(Boolean);
+        } catch (e) {
+            console.warn('跨域访问失败，尝试备用方案');
+            const src = iframe.src.match(/courseInfoId=(\d+)/);
+            return src ? [src[1]] : [];
         }
     }
 
-    // 劫持原始时间参数
-    let hijacked = false;
-
-    const overrideTimeParams = () => {
-        const myVid = document.getElementById('player');
-        if (!myVid) return;
-
-        myVid.seekable.end = function() {
-            return [999999];
-        };
-
-        Object.defineProperty(myVid, 'currentTime', {
-            get: function() { return 999999; },
-            set: function() {}
+    // 发送请求
+    function sendRequest(id) {
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: `${baseUrl}checkLookResource.action?resourceInfoId=${id}&wanChengType=1`,
+                onload: (res) => {
+                    if (res.status === 200) {
+                        resolve();
+                    } else {
+                        reject(new Error(`HTTP ${res.status}`));
+                    }
+                },
+                onerror: reject
+            });
         });
+    }
 
-        const _interval = window.myInterval;
-        window.myInterval = function() {
-            window.mytime = 999999;
-            _interval && _interval();
-        };
+    // 工具函数
+    function randomDelay(min, max) {
+        return new Promise(r => setTimeout(r, min + Math.random() * (max - min)));
+    }
 
-        hijacked = true;
-    };
+    function updateProgress(current, total) {
+        const percent = ((current / total) * 100).toFixed(1);
+        panel.querySelector('.progress-fill').style.width = `${percent}%`;
+        panel.querySelector('.completed').textContent = current;
+        panel.querySelector('.total').textContent = total;
+    }
 
-    const bypassVerification = () => {
-        $.blockUI = function() { console.log('BlockUI prevented'); };
-        window.reload_code = function() {};
-    };
+    function updateStatus(text, type = 'info') {
+        const statusEl = panel.querySelector('.status');
+        statusEl.textContent = text;
+        statusEl.style.color = {
+            info: '#333',
+            processing: '#2196F3',
+            success: '#4CAF50',
+            error: '#F44336'
+        }[type];
+    }
 
-    const forceComplete = () => {
-        const fakeParams = {
-            resourceInfoId: resourceInfoId2,
-            userId: userId2,
-            courseInfoId: courseInfoId2,
-            wanChengType: 1
-        };
+    function updateCurrentId(id) {
+        panel.querySelector('.current-id').textContent = id;
+    }
 
-        fetch('/BKPT/checkLookResource.action?' + new URLSearchParams(fakeParams), {
-            method: 'GET',
-            credentials: 'include'
-        });
-    };
-
-    const createButton = () => {
-        const video = document.getElementById('player');
-        if (!video) return;
-
-        const button = document.createElement('button');
-        button.textContent = '标记完成';
-        button.style.cssText = `
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background: #ff4444;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 5px;
-            cursor: pointer;
-            z-index: 9999;
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-        `;
-
-        button.onmouseover = () => {
-            button.style.background = '#ff6666';
-        };
-        button.onmouseout = () => {
-            button.style.background = '#ff4444';
-        };
-
-        button.onclick = () => {
-            if (!hijacked) {
-                overrideTimeParams();
-                bypassVerification();
-                forceComplete();
-
-                // 延迟1秒后播放视频并在0.5秒后暂停
-                setTimeout(() => {
-                    video.play().then(() => {
-                        setTimeout(() => {
-                            video.pause();
-                        }, 500); // 暂停延迟0.5秒
-                    }).catch(err => {
-                        console.log('播放失败:', err);
-                    });
-                }, 1000); // 初始延迟1秒
-
-                setInterval(() => {
-                    overrideTimeParams();
-                    forceComplete();
-                }, 5000);
-
-                button.textContent = '已标记';
-                button.style.background = '#44ff44';
-                button.disabled = true;
-            }
-        };
-
-        video.parentElement.style.position = 'relative';
-        video.parentElement.appendChild(button);
-    };
-
-    const init = () => {
-        const checkVideo = setInterval(() => {
-            if (document.getElementById('player')) {
-                clearInterval(checkVideo);
-                createButton();
-            }
-        }, 500);
-    };
-
-    window.addEventListener('load', init);
+    // 事件绑定
+    btn.addEventListener('click', processResources);
 })();
